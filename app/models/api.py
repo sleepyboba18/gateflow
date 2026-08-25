@@ -38,3 +38,4 @@ class API(Base):
     )
     scopes: Mapped[list["APIScope"]] = relationship("APIScope", back_populates="api", cascade="all, delete-orphan", passive_deletes=True)
     gateway_policies: Mapped[list["GatewayPolicy"]] = relationship("GatewayPolicy", back_populates="api", cascade="all, delete-orphan", passive_deletes=True)
+    versions: Mapped[list["APIVersion"]] = relationship("APIVersion", back_populates="api", cascade="all, delete-orphan", passive_deletes=True)

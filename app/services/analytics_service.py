@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.api_key import APIKey
 from app.models.api_route import APIRoute
 from app.models.traffic_log import TrafficLog
+from app.models.api_version import APIVersion
 
 
 def parse_period(value: str | None) -> datetime:
@@ -95,3 +96,8 @@ def reliability_timeseries(session: Session, api_id: UUID, start: datetime, end:
     bucket = func.date_trunc(granularity, TrafficLog.created_at).label("timestamp")
     rows = session.execute(select(bucket, func.count(TrafficLog.id), func.coalesce(func.sum(case((TrafficLog.status_code.in_([502, 503, 504]), 1), else_=0)), 0), func.coalesce(func.sum(case((TrafficLog.error_type == "upstream_timeout", 1), else_=0)), 0), func.coalesce(func.avg(TrafficLog.duration_ms), 0)).where(*period_filters(api_id, start, end)).group_by(bucket).order_by(bucket)).all()
     return [{"timestamp": row[0].astimezone(timezone.utc).isoformat(), "requests": int(row[1]), "failures": int(row[2]), "timeouts": int(row[3]), "average_latency_ms": round(float(row[4]), 2)} for row in rows]
+
+
+def version_stats(session: Session, api_id: UUID, start: datetime, end: datetime):
+    rows = session.execute(select(APIVersion.version, func.count(TrafficLog.id), func.coalesce(func.sum(case((TrafficLog.status_code >= 400, 1), else_=0)), 0), func.coalesce(func.sum(case((TrafficLog.rate_limit_allowed.is_(False), 1), else_=0)), 0), func.coalesce(func.avg(TrafficLog.duration_ms), 0)).join(TrafficLog, TrafficLog.api_version_id == APIVersion.id).where(*period_filters(api_id, start, end)).group_by(APIVersion.version).order_by(APIVersion.version)).all()
+    return [{"version": row[0], "requests": int(row[1]), "errors": int(row[2]), "rate_limited": int(row[3]), "average_latency_ms": round(float(row[4]), 2)} for row in rows]

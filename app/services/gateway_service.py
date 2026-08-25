@@ -20,6 +20,7 @@ from app.services.gateway_policy_service import resolve_gateway_policy
 from app.services.scope_service import check_scope_access
 from app.gateway.request_policy import apply_request_policy
 from app.gateway.response_policy import apply_response_policy
+from app.services.schema_service import get_effective_schema, validate_payload
 from app.gateway.reliability import request_with_retries
 from app.services.circuit_breaker_service import can_request, get_effective_breaker, record_failure, record_success
 from app.services.upstream_health_service import record_result
@@ -53,7 +54,7 @@ def _record(session, **values):
     record_traffic(session, **values)
 
 
-def handle_gateway_request(api_slug: str, request_path: str, flask_request: Request, request_id: str):
+def handle_gateway_request(api_slug: str, request_path: str, flask_request: Request, request_id: str, version: str | None = None):
     started = time.perf_counter()
     status = 500
     plaintext_key = flask_request.headers.get("X-API-Key", "")
@@ -70,7 +71,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
         if api_key is None:
             status = 401
             return error_response("Invalid API key", status, request_id)
-        resolved = resolve_gateway_request(session, api_slug, request_path, flask_request.method, api_key.user_id)
+        resolved = resolve_gateway_request(session, api_slug, request_path, flask_request.method, api_key.user_id, version)
         if not check_scope_access(session, api_key.id, resolved.api.id, resolved.route.id):
             status = 403
             _record(session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=403, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=None, rate_limit_remaining=None, scope_authorized=False, policy_allowed=None, policy_error="scope", error_type="authorization")
@@ -83,6 +84,18 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             _record(session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=status, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=None, rate_limit_remaining=None, scope_authorized=True, policy_allowed=False, policy_error=policy_error, error_type="request_policy")
             emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="request_policy", status_code=status)
             return error_response(policy_error, status, request_id)
+        if resolved.version is not None:
+            schema = get_effective_schema(session, resolved.api.id, resolved.version.id, resolved.route.id, "request")
+            if schema is not None:
+                payload = flask_request.get_json(silent=True) if flask_request.get_data(cache=True) else None
+                result = validate_payload(schema, payload, flask_request.content_type, bool(flask_request.get_data(cache=True)))
+                if not result.valid:
+                    status = result.status
+                    _record(session, request_id=request_id, api_id=resolved.api.id, api_version_id=resolved.version.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=status, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=None, rate_limit_remaining=None, scope_authorized=True, policy_allowed=True, policy_error=result.message, error_type="content_type" if status == 415 else "request_validation")
+                    emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="content_type" if status == 415 else "request_validation", status_code=status)
+                    body = {"error": result.message, "status": status, "request_id": request_id}
+                    if result.errors: body["validation_errors"] = list(result.errors)
+                    return body, status, []
         policy = resolve_effective_policy(session, api_key, resolved.api, resolved.route)
         decision = evaluate_policy(session, api_key.id, policy)
         if not decision.allowed:
@@ -122,6 +135,30 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             resolved.api.retry_backoff_ms, deadline,
         )
         body, status, headers = response_parts(response)
+        if resolved.version is not None:
+            schema = get_effective_schema(session, resolved.api.id, resolved.version.id, resolved.route.id, "response")
+            if schema is not None:
+                result = validate_payload(schema, response.json() if "application/json" in response.headers.get("Content-Type", "").lower() else None, response.headers.get("Content-Type"), bool(body))
+                if not result.valid:
+                    status = 502
+                    breaker_result = record_failure(session, breaker)
+                    health = record_result(session, resolved.api.id, resolved.route.id, False, (time.perf_counter() - started) * 1000, status)
+                    _record_failure(session, resolved, api_key, flask_request, request_id, status, "response_validation", started)
+                    emit_health_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, state=health.state, latency_ms=health.average_latency_ms)
+                    emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="response_validation", status_code=status)
+                    return {"error": "Upstream response validation failed", "status": status, "request_id": request_id}, status, []
+        if resolved.version is not None:
+            headers.append(("X-GateForge-API-Version", resolved.version.version))
+            if resolved.version.status == "deprecated":
+                headers.append(("Deprecation", "true"))
+                if resolved.version.sunset_at is not None:
+                    headers.append(("Sunset", resolved.version.sunset_at.strftime("%a, %d %b %Y %H:%M:%S GMT")))
+        if resolved.version is not None:
+            headers.append(("X-GateForge-API-Version", resolved.version.version))
+            if resolved.version.status == "deprecated":
+                headers.append(("Deprecation", "true"))
+                if resolved.version.sunset_at is not None:
+                    headers.append(("Sunset", resolved.version.sunset_at.strftime("%a, %d %b %Y %H:%M:%S GMT")))
         headers = apply_response_policy(headers, gateway_policy)
         headers.extend(_rate_headers(decision))
         logical_success = status not in {502, 503, 504} and status < 500
@@ -131,7 +168,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
         health = record_result(session, resolved.api.id, resolved.route.id, logical_success, (time.perf_counter() - started) * 1000, status)
         emit_health_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, state=health.state, latency_ms=health.average_latency_ms)
         _record(
-            session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id,
+            session, request_id=request_id, api_id=resolved.api.id, api_version_id=resolved.version.id if resolved.version else None, route_id=resolved.route.id,
             api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method,
             path=flask_request.path, upstream_url=build_upstream_url(resolved.api.base_url, resolved.target_path),
             status_code=status, duration_ms=int((time.perf_counter() - started) * 1000),

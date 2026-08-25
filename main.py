@@ -2,7 +2,7 @@ import logging
 
 from app import create_app, socketio
 from app.database.connection import SessionLocal, initialize_database
-from app.models import API, APIKey, APIKeyPlan, APIKeyScope, APIRoute, APIScope, CircuitBreaker, GatewayPolicy, HeaderPolicy, Plan, PlanQuota, PlanRateLimit, QuotaCounter, RateLimit, RateLimitCounter, RouteScope, Scope, TrafficLog, UpstreamHealth, User  # noqa: F401 - registers ORM models before table creation
+from app.models import API, APIKey, APIKeyPlan, APIKeyScope, APIRoute, APIScope, APIVersion, CircuitBreaker, GatewayPolicy, GatewaySchema, HeaderPolicy, Plan, PlanQuota, PlanRateLimit, QuotaCounter, RateLimit, RateLimitCounter, RouteScope, Scope, TrafficLog, UpstreamHealth, User  # noqa: F401 - registers ORM models before table creation
 from config import Config
 from app.services.policy_service import ensure_default_plan
 

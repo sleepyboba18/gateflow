@@ -33,6 +33,8 @@ def create_app() -> Flask:
     from app.routes.plans import plans_bp
     from app.routes.policies import policies_bp
     from app.routes.reliability import reliability_bp
+    from app.routes.versions import versions_bp
+    from app.routes.schemas import schemas_bp
     from app.routes.analytics import analytics_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -43,6 +45,8 @@ def create_app() -> Flask:
     app.register_blueprint(plans_bp, url_prefix="/api/v1/plans")
     app.register_blueprint(policies_bp, url_prefix="/api/v1")
     app.register_blueprint(reliability_bp, url_prefix="/api/v1")
+    app.register_blueprint(versions_bp, url_prefix="/api/v1")
+    app.register_blueprint(schemas_bp, url_prefix="/api/v1")
     app.register_blueprint(analytics_bp, url_prefix="/api/v1/apis")
 
     from app.sockets import auth as socket_auth

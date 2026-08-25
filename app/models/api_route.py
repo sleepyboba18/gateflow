@@ -10,7 +10,7 @@ from app.database.base import Base
 class APIRoute(Base):
     __tablename__ = "api_routes"
     __table_args__ = (
-        UniqueConstraint("api_id", "method", "path", name="uq_api_routes_api_method_path"),
+        UniqueConstraint("version_id", "method", "path", name="uq_api_routes_version_method_path"),
         Index("ix_api_routes_api_path_method", "api_id", "path", "method"),
         Index("ix_api_routes_is_active", "is_active"),
     )
@@ -19,6 +19,7 @@ class APIRoute(Base):
     api_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("apis.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("api_versions.id", ondelete="CASCADE"), nullable=True, index=True)
     path: Mapped[str] = mapped_column(String(2048), nullable=False, index=True)
     method: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     target_path: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -32,3 +33,4 @@ class APIRoute(Base):
     )
     scopes: Mapped[list["RouteScope"]] = relationship("RouteScope", back_populates="route", cascade="all, delete-orphan", passive_deletes=True)
     gateway_policies: Mapped[list["GatewayPolicy"]] = relationship("GatewayPolicy", back_populates="route", cascade="all, delete-orphan", passive_deletes=True)
+    version: Mapped["APIVersion | None"] = relationship("APIVersion", back_populates="routes")

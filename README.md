@@ -246,6 +246,32 @@ GET    /api/v1/apis/<api_id>/analytics/reliability/timeseries
 
 Reliability availability excludes `401`, `403`, and `429` policy/client rejections and measures eligible upstream successes against `502`, `503`, and `504` failures. `gateway:health` and `gateway:circuit` provide transient monitoring notifications. PostgreSQL remains authoritative; Redis and background workers are not used.
 
+## API Versions and Schemas
+
+Versioned gateway traffic uses the canonical URL `/gateway/<api>/<version>/<route>`, such as `/gateway/weather/v2/current`. Versions use the lifecycle states `development`, `active`, `deprecated`, `sunset`, and `disabled`. Deprecated responses include `Deprecation: true` and an optional `Sunset` header; sunset or disabled versions do not reach upstream services.
+
+```text
+POST   /api/v1/apis/<api_id>/versions
+GET    /api/v1/apis/<api_id>/versions
+GET    /api/v1/apis/<api_id>/versions/<version_id>
+PUT    /api/v1/apis/<api_id>/versions/<version_id>
+DELETE /api/v1/apis/<api_id>/versions/<version_id>
+POST   /api/v1/apis/<api_id>/versions/<version_id>/routes
+GET    /api/v1/apis/<api_id>/versions/<version_id>/routes
+```
+
+JSON Schemas are self-contained Draft 2020-12 definitions and are resolved from route to version scope. Request schemas require JSON content and reject malformed or invalid bodies before proxying; response schema violations return a controlled `502`. Schema management uses:
+
+```text
+POST   /api/v1/apis/<api_id>/schemas
+GET    /api/v1/apis/<api_id>/schemas
+GET    /api/v1/apis/<api_id>/schemas/<schema_id>
+PUT    /api/v1/apis/<api_id>/schemas/<schema_id>
+DELETE /api/v1/apis/<api_id>/schemas/<schema_id>
+```
+
+Version analytics are available at `GET /api/v1/apis/<api_id>/analytics/versions`. The `jsonschema` dependency is declared in `requirements.txt`; install dependencies before using schema validation.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

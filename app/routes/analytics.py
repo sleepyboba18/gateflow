@@ -15,6 +15,7 @@ from app.services.analytics_service import (
     parse_period,
     reliability,
     reliability_timeseries,
+    version_stats,
     route_stats,
     status_stats,
     timeseries,
@@ -129,3 +130,9 @@ def analytics_reliability(api_id):
 @require_auth
 def analytics_reliability_timeseries(api_id):
     return _analytics_collection(api_id, reliability_timeseries, granularity=request.args.get("granularity", "hour"))
+
+
+@analytics_bp.get("/<api_id>/analytics/versions")
+@require_auth
+def analytics_versions(api_id):
+    return _analytics_collection(api_id, version_stats)

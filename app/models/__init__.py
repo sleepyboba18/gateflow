@@ -18,5 +18,7 @@ from app.models.gateway_policy import GatewayPolicy
 from app.models.header_policy import HeaderPolicy
 from app.models.circuit_breaker import CircuitBreaker
 from app.models.upstream_health import UpstreamHealth
+from app.models.api_version import APIVersion
+from app.models.schema import GatewaySchema
 
-__all__ = ["API", "APIKey", "APIKeyPlan", "APIKeyScope", "APIRoute", "APIScope", "CircuitBreaker", "GatewayPolicy", "HeaderPolicy", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "RouteScope", "Scope", "TrafficLog", "UpstreamHealth", "User"]
+__all__ = ["API", "APIKey", "APIKeyPlan", "APIKeyScope", "APIRoute", "APIScope", "APIVersion", "CircuitBreaker", "GatewayPolicy", "GatewaySchema", "HeaderPolicy", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "RouteScope", "Scope", "TrafficLog", "UpstreamHealth", "User"]
