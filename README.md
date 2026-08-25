@@ -114,7 +114,6 @@ An API registration contains a public slug, an HTTP(S) upstream base URL, and a 
 ## Gateway
 
 Gateway traffic uses:
-
 ```text
 /gateway/<api_slug>/<path>
 ```
@@ -192,6 +191,40 @@ Use `from` and `to` ISO 8601 UTC query parameters for a custom time range. Resul
 Monitoring connections provide a JWT in the connection payload as `{ "token": "<JWT>" }`. Active users automatically join `user:<user_id>`. Authorized clients may join `api:<api_id>` and `api_key:<api_key_id>` rooms; owners and admins are checked against PostgreSQL.
 
 Supported events are `connect`, `disconnect`, `join_api`, `leave_api`, `join_api_key`, `leave_api`, `join_user`, and `leave_user`. Gateway notifications use `gateway:traffic`, `gateway:rate_limit`, and `gateway:error`; API-room joins receive `monitoring:snapshot`. Socket.IO is transient notification transport only, while PostgreSQL remains the persistent source of truth. Event delivery failures do not fail HTTP gateway responses, and no Redis message queue is used.
+
+## Scopes
+
+Scopes provide fine-grained API-key authorization. Route scopes take precedence over API scopes; when a route has no scopes, its API scopes are required. Global scope creation is admin-only, while API owners and admins manage associations.
+
+```text
+POST   /api/v1/scopes
+GET    /api/v1/scopes
+PUT    /api/v1/scopes/<scope_id>
+DELETE /api/v1/scopes/<scope_id>
+POST   /api/v1/api-keys/<api_key_id>/scopes
+GET    /api/v1/api-keys/<api_key_id>/scopes
+DELETE /api/v1/api-keys/<api_key_id>/scopes/<scope_id>
+POST   /api/v1/apis/<api_id>/scopes
+GET    /api/v1/apis/<api_id>/scopes
+DELETE /api/v1/apis/<api_id>/scopes/<scope_id>
+POST   /api/v1/apis/<api_id>/routes/<route_id>/scopes
+GET    /api/v1/apis/<api_id>/routes/<route_id>/scopes
+DELETE /api/v1/apis/<api_id>/routes/<route_id>/scopes/<scope_id>
+```
+
+## Gateway Policies
+
+Route policies override API policies and can restrict query parameters, request bodies, file uploads, and body size. Safe request/response header policies and upstream authentication are supported without exposing credentials. Protected headers, CRLF injection, arbitrary code, and unsafe upstream destinations remain blocked.
+
+```text
+GET /api/v1/apis/<api_id>/policy
+PUT /api/v1/apis/<api_id>/policy
+GET /api/v1/apis/<api_id>/routes/<route_id>/policy
+PUT /api/v1/apis/<api_id>/routes/<route_id>/policy
+POST   /api/v1/apis/<api_id>/headers
+GET    /api/v1/apis/<api_id>/headers
+DELETE /api/v1/apis/<api_id>/headers/<header_policy_id>
+```
 
 ## License
 

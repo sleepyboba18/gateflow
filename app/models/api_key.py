@@ -26,3 +26,4 @@ class APIKey(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="api_keys")
     plan_assignments: Mapped[list["APIKeyPlan"]] = relationship("APIKeyPlan", back_populates="api_key", cascade="all, delete-orphan", passive_deletes=True)
+    scopes: Mapped[list["APIKeyScope"]] = relationship("APIKeyScope", back_populates="api_key", cascade="all, delete-orphan", passive_deletes=True)

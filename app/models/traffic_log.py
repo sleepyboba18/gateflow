@@ -36,4 +36,7 @@ class TrafficLog(Base):
     rate_limit_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quota_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quota_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scope_authorized: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    policy_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    policy_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

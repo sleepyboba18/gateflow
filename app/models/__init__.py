@@ -10,5 +10,11 @@ from app.models.rate_limit import RateLimit
 from app.models.rate_limit_counter import RateLimitCounter
 from app.models.traffic_log import TrafficLog
 from app.models.user import User
+from app.models.scope import Scope
+from app.models.api_key_scope import APIKeyScope
+from app.models.api_scope import APIScope
+from app.models.route_scope import RouteScope
+from app.models.gateway_policy import GatewayPolicy
+from app.models.header_policy import HeaderPolicy
 
-__all__ = ["API", "APIKey", "APIKeyPlan", "APIRoute", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "TrafficLog", "User"]
+__all__ = ["API", "APIKey", "APIKeyPlan", "APIKeyScope", "APIRoute", "APIScope", "GatewayPolicy", "HeaderPolicy", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "RouteScope", "Scope", "TrafficLog", "User"]

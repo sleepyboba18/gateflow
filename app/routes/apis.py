@@ -48,6 +48,7 @@ def _api_response(api: API, include_routes: bool = False) -> dict:
         "description": api.description, "is_active": api.is_active,
         "timeout_seconds": api.timeout_seconds, "created_at": _timestamp(api.created_at),
         "updated_at": _timestamp(api.updated_at),
+        "upstream_auth": {"type": api.upstream_auth_type, "configured": bool(api.upstream_auth_value)},
     }
     if include_routes:
         result["routes"] = [_route_response(route) for route in api.routes]
@@ -86,7 +87,10 @@ def create_api_route():
     if error:
         return error
     try:
-        api = create_api(session, owner_id=g.current_user.id, name=name.strip(), slug=slug, base_url=base_url.strip(), description=data.get("description"), timeout_seconds=timeout)
+        auth_type = data.get("upstream_auth_type", "none")
+        if auth_type not in {"none", "bearer", "api_key", "basic"} or (auth_type == "api_key" and data.get("upstream_auth_header") and not isinstance(data["upstream_auth_header"], str)):
+            return _error("Invalid request", 400)
+        api = create_api(session, owner_id=g.current_user.id, name=name.strip(), slug=slug, base_url=base_url.strip(), description=data.get("description"), timeout_seconds=timeout, upstream_auth_type=auth_type, upstream_auth_value=data.get("upstream_auth_value"), upstream_auth_header=data.get("upstream_auth_header"))
         commit_or_raise_conflict(session)
         session.refresh(api)
         return jsonify({"api": _api_response(api)}), 201
@@ -159,6 +163,18 @@ def update_api(api_id: str):
             if field in {"is_active"} and not isinstance(value, bool):
                 return _error("Invalid request", 400)
             setattr(api, field, value.strip() if field in {"name", "base_url"} else value)
+        if "upstream_auth_type" in data:
+            if data["upstream_auth_type"] not in {"none", "bearer", "api_key", "basic"}:
+                return _error("Invalid request", 400)
+            api.upstream_auth_type = data["upstream_auth_type"]
+        if "upstream_auth_value" in data:
+            if not isinstance(data["upstream_auth_value"], str) or len(data["upstream_auth_value"]) > 2048:
+                return _error("Invalid request", 400)
+            api.upstream_auth_value = data["upstream_auth_value"]
+        if "upstream_auth_header" in data:
+            if not isinstance(data["upstream_auth_header"], str) or "\r" in data["upstream_auth_header"] or "\n" in data["upstream_auth_header"]:
+                return _error("Invalid request", 400)
+            api.upstream_auth_header = data["upstream_auth_header"]
         commit_or_raise_conflict(session)
         session.refresh(api)
         return jsonify({"api": _api_response(api)}), 200

@@ -20,6 +20,9 @@ class API(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    upstream_auth_type: Mapped[str] = mapped_column(String(16), default="none", nullable=False)
+    upstream_auth_value: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    upstream_auth_header: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -30,3 +33,5 @@ class API(Base):
     rate_limits: Mapped[list["RateLimit"]] = relationship(
         "RateLimit", back_populates="api", cascade="all, delete-orphan", passive_deletes=True
     )
+    scopes: Mapped[list["APIScope"]] = relationship("APIScope", back_populates="api", cascade="all, delete-orphan", passive_deletes=True)
+    gateway_policies: Mapped[list["GatewayPolicy"]] = relationship("GatewayPolicy", back_populates="api", cascade="all, delete-orphan", passive_deletes=True)

@@ -17,6 +17,10 @@ from app.services.rate_limit_service import RateLimitConfigurationError
 from app.services.policy_service import PolicyConfigurationError, evaluate_policy, resolve_effective_policy
 from app.services.traffic_service import record_traffic
 from app.sockets.events import emit_gateway_error, emit_rate_limit_event, emit_traffic_event
+from app.services.gateway_policy_service import resolve_gateway_policy
+from app.services.scope_service import check_scope_access
+from app.gateway.request_policy import apply_request_policy
+from app.gateway.response_policy import apply_response_policy
 
 logger = logging.getLogger("gateforge.gateway")
 
@@ -64,6 +68,18 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             status = 401
             return error_response("Invalid API key", status, request_id)
         resolved = resolve_gateway_request(session, api_slug, request_path, flask_request.method, api_key.user_id)
+        if not check_scope_access(session, api_key.id, resolved.api.id, resolved.route.id):
+            status = 403
+            _record(session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=403, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=None, rate_limit_remaining=None, scope_authorized=False, policy_allowed=None, policy_error="scope", error_type="authorization")
+            emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="authorization", status_code=403)
+            return error_response("Insufficient scope", 403, request_id)
+        gateway_policy = resolve_gateway_policy(session, resolved.api.id, resolved.route.id)
+        _, policy_error = apply_request_policy({}, flask_request, gateway_policy, request_id, api_slug, resolved.route.path)
+        if policy_error:
+            status = 413 if "exceeds" in policy_error else 400
+            _record(session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=status, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=None, rate_limit_remaining=None, scope_authorized=True, policy_allowed=False, policy_error=policy_error, error_type="request_policy")
+            emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="request_policy", status_code=status)
+            return error_response(policy_error, status, request_id)
         policy = resolve_effective_policy(session, api_key, resolved.api, resolved.route)
         decision = evaluate_policy(session, api_key.id, policy)
         if not decision.allowed:
@@ -77,7 +93,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
                 plan_id=policy.plan.id, limit_type=decision.policy_type,
                 rate_limit_limit=decision.limit if not decision.quota else None,
                 quota_limit=decision.limit if decision.quota else None,
-                quota_remaining=decision.remaining if decision.quota else None, error_type="rate_limit",
+                quota_remaining=decision.remaining if decision.quota else None, scope_authorized=True, policy_allowed=True, error_type="rate_limit",
             )
             emit_rate_limit_event(
                 request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id,
@@ -88,6 +104,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             return {"error": message, "status": 429, "request_id": request_id, "limit_type": decision.policy_type, "retry_after": decision.retry_after}, 429, _rate_headers(decision)
         response = forward_request(resolved, flask_request, request_id)
         body, status, headers = response_parts(response)
+        headers = apply_response_policy(headers, gateway_policy)
         headers.extend(_rate_headers(decision))
         _record(
             session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id,
@@ -99,7 +116,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             plan_id=policy.plan.id, limit_type=decision.policy_type,
             rate_limit_limit=decision.limit if not decision.quota else None,
             quota_limit=decision.limit if decision.quota else None,
-            quota_remaining=decision.remaining if decision.quota else None, error_type=None,
+            quota_remaining=decision.remaining if decision.quota else None, scope_authorized=True, policy_allowed=True, error_type=None,
         )
         emit_traffic_event(
             request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id,
