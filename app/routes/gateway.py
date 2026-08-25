@@ -21,4 +21,7 @@ def gateway(api_slug: str, version: str, request_path: str):
         for key, value in headers:
             response.headers[key] = value
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-GateForge-Request-ID"] = request_id
+    if response.status_code == 401:
+        response.headers.setdefault("WWW-Authenticate", "ApiKey")
     return response

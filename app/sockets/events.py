@@ -36,3 +36,9 @@ def emit_health_event(*, api_id, owner_id, route_id, state, latency_ms):
 
 def emit_circuit_event(*, api_id, owner_id, route_id, previous_state, state):
     _emit("gateway:circuit", {"api_id": str(api_id), "route_id": str(route_id) if route_id else None, "previous_state": previous_state, "state": state, "created_at": datetime.now(timezone.utc).isoformat()}, [f"api:{api_id}", f"user:{owner_id}"])
+
+
+def emit_security_event(*, event_type, api_key_id=None, api_id=None, owner_id=None):
+    payload = {"event_type": event_type, "api_key_id": str(api_key_id) if api_key_id else None, "api_id": str(api_id) if api_id else None, "created_at": datetime.now(timezone.utc).isoformat()}
+    rooms = [room for room in [f"api:{api_id}" if api_id else None, f"user:{owner_id}" if owner_id else None, f"api_key:{api_key_id}" if api_key_id else None] if room]
+    _emit("gateway:security", payload, rooms)

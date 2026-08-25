@@ -17,6 +17,7 @@ from app.models.rate_limit_counter import RateLimitCounter
 from app.models.traffic_log import TrafficLog
 from app.services.rate_limit_service import window_start
 from app.services.api_key_service import generate_api_key, get_owned_api_key, list_user_api_keys, revoke_api_key
+from app.services.api_key_service import get_key_status
 
 
 api_keys_bp = Blueprint("api_keys", __name__)
@@ -36,10 +37,14 @@ def _key_response(api_key, include_plaintext: str | None = None) -> dict:
         "name": api_key.name,
         "key_prefix": api_key.key_prefix,
         "is_active": api_key.is_active,
+        "status": get_key_status(api_key),
+        "last_used_ip": api_key.last_used_ip,
         "expires_at": _timestamp(api_key.expires_at),
         "last_used_at": _timestamp(api_key.last_used_at),
         "created_at": _timestamp(api_key.created_at),
         "revoked_at": _timestamp(api_key.revoked_at),
+        "suspended_at": _timestamp(api_key.suspended_at),
+        "rotation_parent_id": str(api_key.rotation_parent_id) if api_key.rotation_parent_id else None,
     }
     if include_plaintext is not None:
         response["key"] = include_plaintext

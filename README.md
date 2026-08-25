@@ -272,6 +272,36 @@ DELETE /api/v1/apis/<api_id>/schemas/<schema_id>
 
 Version analytics are available at `GET /api/v1/apis/<api_id>/analytics/versions`. The `jsonschema` dependency is declared in `requirements.txt`; install dependencies before using schema validation.
 
+## API-Key Security
+
+API keys are generated with cryptographically secure randomness and only their one-way hashes are stored. The plaintext key is returned once at creation or rotation and is never returned by listing, detail, analytics, audit, or Socket.IO responses.
+
+```text
+POST /api/v1/api-keys
+GET  /api/v1/api-keys
+GET  /api/v1/api-keys/<api_key_id>
+POST /api/v1/api-keys/<api_key_id>/rotate
+POST /api/v1/api-keys/<api_key_id>/revoke
+POST /api/v1/api-keys/<api_key_id>/suspend
+POST /api/v1/api-keys/<api_key_id>/unsuspend
+DELETE /api/v1/api-keys/<api_key_id>
+```
+
+Keys evaluate expiration, suspension, revocation, IP rules, and exact origin rules synchronously. IP deny rules take precedence over allow rules; forwarding headers are trusted only when the direct peer is in `TRUSTED_PROXY_CIDRS`. Security events are persisted in PostgreSQL and sent transiently as `gateway:security` without credentials.
+
+```text
+POST   /api/v1/api-keys/<api_key_id>/ip-rules
+GET    /api/v1/api-keys/<api_key_id>/ip-rules
+PUT    /api/v1/api-keys/<api_key_id>/ip-rules/<rule_id>
+DELETE /api/v1/api-keys/<api_key_id>/ip-rules/<rule_id>
+POST   /api/v1/api-keys/<api_key_id>/origins
+GET    /api/v1/api-keys/<api_key_id>/origins
+DELETE /api/v1/api-keys/<api_key_id>/origins/<origin_id>
+GET    /api/v1/security/events
+GET    /api/v1/api-keys/<api_key_id>/security-events
+GET    /api/v1/api-keys/<api_key_id>/security-summary
+```
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

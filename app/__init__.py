@@ -22,8 +22,8 @@ def create_app() -> Flask:
         JWT_EXPIRATION_MINUTES=Config.JWT_EXPIRATION_MINUTES,
     )
 
-    CORS(app, origins=Config.CORS_ORIGINS)
-    socketio.init_app(app, cors_allowed_origins=Config.CORS_ORIGINS)
+    CORS(app, origins=Config.CORS_ALLOWED_ORIGINS)
+    socketio.init_app(app, cors_allowed_origins=Config.CORS_ALLOWED_ORIGINS)
 
     from app.routes.api_keys import api_keys_bp
     from app.routes.auth import auth_bp
@@ -35,6 +35,7 @@ def create_app() -> Flask:
     from app.routes.reliability import reliability_bp
     from app.routes.versions import versions_bp
     from app.routes.schemas import schemas_bp
+    from app.routes.security import security_bp
     from app.routes.analytics import analytics_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -47,6 +48,13 @@ def create_app() -> Flask:
     app.register_blueprint(reliability_bp, url_prefix="/api/v1")
     app.register_blueprint(versions_bp, url_prefix="/api/v1")
     app.register_blueprint(schemas_bp, url_prefix="/api/v1")
+    app.register_blueprint(security_bp, url_prefix="/api/v1")
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
     app.register_blueprint(analytics_bp, url_prefix="/api/v1/apis")
 
     from app.sockets import auth as socket_auth

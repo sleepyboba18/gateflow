@@ -11,7 +11,7 @@ from app.database.connection import SessionLocal
 from app.gateway.proxy import forward_request, response_parts
 from app.gateway.proxy import build_upstream_url
 from app.gateway.resolver import GatewayResolutionError, resolve_gateway_request
-from app.services.api_key_service import validate_api_key
+from app.services.api_key_service import authenticate_api_key, client_ip
 from app.services.rate_limit_service import RateLimitConfigurationError
 from app.services.policy_service import PolicyConfigurationError, evaluate_policy, resolve_effective_policy
 from app.services.traffic_service import record_traffic
@@ -67,10 +67,16 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
     api_key = None
     resolved = None
     try:
-        api_key = validate_api_key(session, plaintext_key)
+        auth_result = authenticate_api_key(
+            session, plaintext_key, source_ip=client_ip(flask_request),
+            origin=flask_request.headers.get("Origin"), request_id=request_id,
+            user_agent=flask_request.headers.get("User-Agent"),
+        )
+        api_key = auth_result.api_key
         if api_key is None:
             status = 401
-            return error_response("Invalid API key", status, request_id)
+            message = "API key expired" if auth_result.reason == "expired" else "Invalid API key"
+            return error_response(message, status, request_id)
         resolved = resolve_gateway_request(session, api_slug, request_path, flask_request.method, api_key.user_id, version)
         if not check_scope_access(session, api_key.id, resolved.api.id, resolved.route.id):
             status = 403
