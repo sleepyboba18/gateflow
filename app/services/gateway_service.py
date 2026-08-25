@@ -13,7 +13,8 @@ from app.gateway.proxy import forward_request, response_parts
 from app.gateway.proxy import build_upstream_url
 from app.gateway.resolver import GatewayResolutionError, resolve_gateway_request
 from app.services.api_key_service import validate_api_key
-from app.services.rate_limit_service import RateLimitConfigurationError, check_rate_limit
+from app.services.rate_limit_service import RateLimitConfigurationError
+from app.services.policy_service import PolicyConfigurationError, evaluate_policy, resolve_effective_policy
 from app.services.traffic_service import record_traffic
 
 logger = logging.getLogger("gateforge.gateway")
@@ -33,11 +34,8 @@ def error_response(message: str, status: int, request_id: str) -> tuple[dict, in
 def _rate_headers(decision) -> list[tuple[str, str]]:
     headers = []
     if decision.limit is not None:
-        headers.extend([
-            ("X-RateLimit-Limit", str(decision.limit)),
-            ("X-RateLimit-Remaining", str(decision.remaining)),
-            ("X-RateLimit-Reset", str(decision.reset_at)),
-        ])
+        prefix = "X-Quota" if decision.quota else "X-RateLimit"
+        headers.extend([(f"{prefix}-Limit", str(decision.limit)), (f"{prefix}-Remaining", str(decision.remaining)), (f"{prefix}-Reset", str(decision.reset_at))])
         if decision.retry_after is not None:
             headers.append(("Retry-After", str(decision.retry_after)))
     return headers
@@ -65,7 +63,8 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             status = 401
             return error_response("Invalid API key", status, request_id)
         resolved = resolve_gateway_request(session, api_slug, request_path, flask_request.method, api_key.user_id)
-        decision = check_rate_limit(session, api_key.id, resolved.api.id, resolved.route.id)
+        policy = resolve_effective_policy(session, api_key, resolved.api, resolved.route)
+        decision = evaluate_policy(session, api_key.id, policy)
         if not decision.allowed:
             status = 429
             _record(
@@ -73,9 +72,14 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
                 api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method,
                 path=flask_request.path, upstream_url=None, status_code=429,
                 duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0,
-                response_size=0, rate_limit_allowed=False, rate_limit_remaining=decision.remaining, error_type="rate_limit",
+                response_size=0, rate_limit_allowed=False, rate_limit_remaining=decision.remaining,
+                plan_id=policy.plan.id, limit_type=decision.policy_type,
+                rate_limit_limit=decision.limit if not decision.quota else None,
+                quota_limit=decision.limit if decision.quota else None,
+                quota_remaining=decision.remaining if decision.quota else None, error_type="rate_limit",
             )
-            return {"error": "Rate limit exceeded", "status": 429, "request_id": request_id}, 429, _rate_headers(decision)
+            message = "Daily quota exceeded" if decision.quota and decision.policy_type == "daily" else "Monthly quota exceeded" if decision.quota else "Rate limit exceeded"
+            return {"error": message, "status": 429, "request_id": request_id, "limit_type": decision.policy_type, "retry_after": decision.retry_after}, 429, _rate_headers(decision)
         response = forward_request(resolved, flask_request, request_id)
         body, status, headers = response_parts(response)
         headers.extend(_rate_headers(decision))
@@ -85,7 +89,11 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             path=flask_request.path, upstream_url=build_upstream_url(resolved.api.base_url, resolved.target_path),
             status_code=status, duration_ms=int((time.perf_counter() - started) * 1000),
             request_size=flask_request.content_length or 0, response_size=len(body),
-            rate_limit_allowed=True, rate_limit_remaining=decision.remaining, error_type=None,
+            rate_limit_allowed=True, rate_limit_remaining=decision.remaining,
+            plan_id=policy.plan.id, limit_type=decision.policy_type,
+            rate_limit_limit=decision.limit if not decision.quota else None,
+            quota_limit=decision.limit if decision.quota else None,
+            quota_remaining=decision.remaining if decision.quota else None, error_type=None,
         )
         return body, status, headers
     except GatewayResolutionError as error:
@@ -99,7 +107,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
                 rate_limit_allowed=None, rate_limit_remaining=None, error_type="gateway_error",
             )
         return error_response(error.message, error.status, request_id)
-    except RateLimitConfigurationError:
+    except (RateLimitConfigurationError, PolicyConfigurationError):
         status = 500
         return error_response("Rate limit configuration error", status, request_id)
     except requests.Timeout:

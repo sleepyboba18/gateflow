@@ -30,12 +30,14 @@ def create_app() -> Flask:
     from app.routes.gateway import gateway_bp
     from app.routes.apis import apis_bp
     from app.routes.rate_limits import rate_limits_bp
+    from app.routes.plans import plans_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
     app.register_blueprint(api_keys_bp, url_prefix="/api/v1/api-keys")
     app.register_blueprint(apis_bp, url_prefix="/api/v1/apis")
     app.register_blueprint(gateway_bp, url_prefix="/gateway")
     app.register_blueprint(rate_limits_bp, url_prefix="/api/v1/apis")
+    app.register_blueprint(plans_bp, url_prefix="/api/v1/plans")
 
     @app.get("/health")
     def health() -> tuple[Any, int]:

@@ -145,6 +145,32 @@ GET /api/v1/apis/<api_id>/traffic/summary
 
 Traffic history supports database-level pagination and filtering by method, status, route, API key, and time range. The summary endpoint performs PostgreSQL aggregation for totals, successful requests, client/server errors, rate-limited requests, and average duration.
 
+## Plans and Quotas
+
+Administrators manage plans and their policies:
+
+```text
+POST   /api/v1/plans
+GET    /api/v1/plans
+GET    /api/v1/plans/<plan_id>
+PUT    /api/v1/plans/<plan_id>
+DELETE /api/v1/plans/<plan_id>
+
+POST   /api/v1/plans/<plan_id>/rate-limits
+GET    /api/v1/plans/<plan_id>/rate-limits
+PUT    /api/v1/plans/<plan_id>/rate-limits/<rate_limit_id>
+DELETE /api/v1/plans/<plan_id>/rate-limits/<rate_limit_id>
+
+POST   /api/v1/plans/<plan_id>/quotas
+GET    /api/v1/plans/<plan_id>/quotas
+PUT    /api/v1/plans/<plan_id>/quotas/<quota_id>
+DELETE /api/v1/plans/<plan_id>/quotas/<quota_id>
+```
+
+New API keys use the active assigned plan, or the active default Free plan when no assignment exists. Expired or inactive assignments fall back safely. Effective limits follow route override, API override, plan limit, then no limit; all applicable short windows and daily/monthly quotas must pass. The key usage endpoint is `GET /api/v1/api-keys/<api_key_id>/usage`.
+
+Plan and quota counters are maintained synchronously with PostgreSQL atomic upserts. PostgreSQL/Supabase is the authoritative state store; Redis is not required or used.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

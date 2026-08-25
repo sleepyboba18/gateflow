@@ -11,13 +11,15 @@ class RateLimitCounter(Base):
     __tablename__ = "rate_limit_counters"
     __table_args__ = (
         UniqueConstraint("rate_limit_id", "api_key_id", "window_start", name="uq_rate_limit_counters_window"),
+        UniqueConstraint("plan_rate_limit_id", "api_key_id", "window_start", name="uq_plan_rate_limit_counters_window"),
         Index("ix_rate_limit_counters_current", "rate_limit_id", "api_key_id", "window_start"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    rate_limit_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("rate_limits.id", ondelete="CASCADE"), nullable=False, index=True
+    rate_limit_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("rate_limits.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    plan_rate_limit_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("plan_rate_limits.id", ondelete="CASCADE"), nullable=True, index=True)
     api_key_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -27,3 +29,4 @@ class RateLimitCounter(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     rate_limit: Mapped["RateLimit"] = relationship("RateLimit", back_populates="counters")
+    plan_rate_limit: Mapped["PlanRateLimit"] = relationship("PlanRateLimit", back_populates="counters")

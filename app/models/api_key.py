@@ -25,3 +25,4 @@ class APIKey(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="api_keys")
+    plan_assignments: Mapped[list["APIKeyPlan"]] = relationship("APIKeyPlan", back_populates="api_key", cascade="all, delete-orphan", passive_deletes=True)
