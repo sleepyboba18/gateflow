@@ -10,9 +10,11 @@ gateway_bp = Blueprint("gateway", __name__)
 def gateway(api_slug: str, request_path: str):
     request_id = request_id_from(request)
     result = handle_gateway_request(api_slug, request_path, request, request_id)
-    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], dict):
+    if isinstance(result, tuple) and len(result) in {2, 3} and isinstance(result[0], dict):
         response = jsonify(result[0])
         response.status_code = result[1]
+        for key, value in result[2] if len(result) == 3 else []:
+            response.headers[key] = value
     else:
         body, status, headers = result
         response = make_response(body, status)

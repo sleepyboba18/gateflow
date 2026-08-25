@@ -27,3 +27,6 @@ class APIRoute(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     api: Mapped["API"] = relationship("API", back_populates="routes")
+    rate_limits: Mapped[list["RateLimit"]] = relationship(
+        "RateLimit", back_populates="route", cascade="all, delete-orphan", passive_deletes=True
+    )

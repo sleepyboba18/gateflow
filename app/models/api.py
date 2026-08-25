@@ -27,3 +27,6 @@ class API(Base):
     routes: Mapped[list["APIRoute"]] = relationship(
         "APIRoute", back_populates="api", cascade="all, delete-orphan", passive_deletes=True
     )
+    rate_limits: Mapped[list["RateLimit"]] = relationship(
+        "RateLimit", back_populates="api", cascade="all, delete-orphan", passive_deletes=True
+    )

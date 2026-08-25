@@ -2,7 +2,7 @@ import logging
 
 from app import create_app, socketio
 from app.database.connection import initialize_database
-from app.models import API, APIKey, APIRoute, User  # noqa: F401 - registers ORM models before table creation
+from app.models import API, APIKey, APIRoute, RateLimit, RateLimitCounter, TrafficLog, User  # noqa: F401 - registers ORM models before table creation
 from config import Config
 
 

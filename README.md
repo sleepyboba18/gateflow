@@ -121,6 +121,30 @@ Gateway traffic uses:
 
 Every gateway request requires an `X-API-Key` belonging to the owner of the registered API. GateForge resolves the configured route, forwards safe headers, query parameters, and the raw request body, then returns the upstream status and safe response headers. Requests receive a generated or preserved `X-Request-ID`, which is returned to the client and included in gateway logs. Upstream timeouts return `504`; connection failures return `502`.
 
+## Rate Limits
+
+Rate limits are stored in PostgreSQL and use a fixed-window algorithm. Limits may apply to an entire API or to one route; an active route-specific limit takes precedence over the API-wide limit. GateForge does not use Redis for rate limiting.
+
+```text
+POST   /api/v1/apis/<api_id>/rate-limits
+GET    /api/v1/apis/<api_id>/rate-limits
+PUT    /api/v1/apis/<api_id>/rate-limits/<rate_limit_id>
+DELETE /api/v1/apis/<api_id>/rate-limits/<rate_limit_id>
+```
+
+Counters are keyed by API key, limit, and UTC window and are incremented with a PostgreSQL atomic upsert. Rejected requests return `429 Too Many Requests`, `Retry-After`, and `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers.
+
+## Traffic
+
+Gateway requests are persisted as traffic records, including request IDs, status codes, durations, request/response sizes, rate-limit decisions, and controlled error types. Credentials and sensitive authentication headers are not stored.
+
+```text
+GET /api/v1/apis/<api_id>/traffic
+GET /api/v1/apis/<api_id>/traffic/summary
+```
+
+Traffic history supports database-level pagination and filtering by method, status, route, API key, and time range. The summary endpoint performs PostgreSQL aggregation for totals, successful requests, client/server errors, rate-limited requests, and average duration.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
