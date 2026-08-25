@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 
 import requests
 from flask import Request
@@ -25,15 +24,13 @@ from app.gateway.reliability import request_with_retries
 from app.services.circuit_breaker_service import can_request, get_effective_breaker, record_failure, record_success
 from app.services.upstream_health_service import record_result
 from app.sockets.events import emit_circuit_event, emit_health_event
+from app.observability.request_logging import request_id as validated_request_id
 
 logger = logging.getLogger("gateforge.gateway")
 
 
 def request_id_from(request: Request) -> str:
-    value = request.headers.get("X-Request-ID", "")
-    if value and len(value) <= 128 and all(character.isprintable() and character not in "\r\n" for character in value):
-        return value
-    return str(uuid.uuid4())
+    return validated_request_id(request.headers.get("X-Request-ID"))
 
 
 def error_response(message: str, status: int, request_id: str) -> tuple[dict, int]:

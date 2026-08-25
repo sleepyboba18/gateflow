@@ -304,4 +304,29 @@ GET    /api/v1/api-keys/<api_key_id>/security-summary
 
 ## License
 
+## Health Endpoints
+
+```text
+GET /health
+GET /health/live
+GET /health/ready
+```
+
+`/health/live` checks only process liveness. `/health/ready` checks PostgreSQL connectivity, while `/health` reports the summarized service and database state without exposing connection details.
+
+## Observability and Analytics
+
+GateForge emits structured JSON logs to stdout by default. Request lifecycle events are correlated with a validated `X-GateForge-Request-ID`; sensitive headers and query parameters are redacted. Traffic and security audit records remain separate PostgreSQL-backed sources for analytics, and no application log lines are stored as database records.
+
+```text
+GET /api/v1/analytics/overview
+GET /api/v1/apis/<api_id>/analytics/overview
+GET /api/v1/apis/<api_id>/analytics/routes
+GET /api/v1/api-keys/<api_key_id>/analytics
+GET /api/v1/security/analytics
+GET /api/v1/security/events
+```
+
+Analytics supports UTC `from` and `to` filters and enforces `ANALYTICS_MAX_DAYS`. Metrics are aggregated from PostgreSQL traffic and security audit tables, including latency, status, upstream, API-key, route, version, and security measurements. Authorized Socket.IO monitoring clients continue to receive transient traffic, error, security, health, and circuit events; PostgreSQL remains authoritative.
+
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

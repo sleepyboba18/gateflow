@@ -23,19 +23,23 @@ def build_upstream_url(base_url: str, target_path: str) -> str:
 def forward_request(resolved: ResolvedGatewayRequest, flask_request: Request, request_id: str, policy=None, timeout_override=None) -> requests.Response:
     url = build_upstream_url(resolved.api.base_url, resolved.target_path)
     headers = {
-        key: value for key, value in flask_request.headers.items() if key.lower() in SAFE_REQUEST_HEADERS and key.lower() != "content-length"
+        key: value
+        for key, value in flask_request.headers.items()
+        if key.lower() in SAFE_REQUEST_HEADERS and key.lower() not in {"content-length", "x-request-id"}
     }
     headers["X-Request-ID"] = request_id
     if policy is not None:
         headers, error = apply_request_policy(headers, flask_request, policy, request_id, resolved.api.slug, resolved.route.path)
         if error:
             raise ValueError(error)
-    if resolved.api.upstream_auth_type == "bearer" and resolved.api.upstream_auth_value:
-        headers["Authorization"] = f"Bearer {resolved.api.upstream_auth_value}"
-    elif resolved.api.upstream_auth_type == "api_key" and resolved.api.upstream_auth_value:
-        headers[resolved.api.upstream_auth_header or "X-Upstream-API-Key"] = resolved.api.upstream_auth_value
-    elif resolved.api.upstream_auth_type == "basic" and resolved.api.upstream_auth_value:
-        headers["Authorization"] = f"Basic {resolved.api.upstream_auth_value}"
+    auth_type = getattr(resolved.api, "upstream_auth_type", "none")
+    auth_value = getattr(resolved.api, "upstream_auth_value", None)
+    if auth_type == "bearer" and auth_value:
+        headers["Authorization"] = f"Bearer {auth_value}"
+    elif auth_type == "api_key" and auth_value:
+        headers[getattr(resolved.api, "upstream_auth_header", None) or "X-Upstream-API-Key"] = auth_value
+    elif auth_type == "basic" and auth_value:
+        headers["Authorization"] = f"Basic {auth_value}"
     return requests.request(
         method=flask_request.method,
         url=url,

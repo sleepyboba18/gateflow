@@ -8,6 +8,7 @@ from app.models.api_key import APIKey
 from app.models.api_route import APIRoute
 from app.models.traffic_log import TrafficLog
 from app.models.api_version import APIVersion
+from app.models.security_audit_log import SecurityAuditLog
 
 
 def parse_period(value: str | None) -> datetime:
@@ -45,7 +46,7 @@ def timeseries(session: Session, api_id: UUID, start: datetime, end: datetime, g
 
 def route_stats(session: Session, api_id: UUID, start: datetime, end: datetime):
     rows = session.execute(select(TrafficLog.route_id, TrafficLog.method, TrafficLog.path, func.count(TrafficLog.id), func.coalesce(func.sum(case((TrafficLog.status_code >= 400, 1), else_=0)), 0), func.coalesce(func.sum(case((TrafficLog.rate_limit_allowed.is_(False), 1), else_=0)), 0), func.coalesce(func.avg(TrafficLog.duration_ms), 0)).where(*period_filters(api_id, start, end)).group_by(TrafficLog.route_id, TrafficLog.method, TrafficLog.path).order_by(func.count(TrafficLog.id).desc())).all()
-    return [{"route_id": str(row[0]) if row[0] else None, "method": row[1], "path": row[2], "requests": int(row[3]), "errors": int(row[4]), "rate_limited": int(row[5]), "average_latency_ms": round(float(row[6]), 2)} for row in rows]
+    return [{"route_id": str(row[0]) if row[0] else None, "method": row[1], "path": row[2], "requests": int(row[3]), "errors": int(row[4]), "success_rate": round((int(row[3]) - int(row[4])) / int(row[3]) * 100, 2) if row[3] else 0.0, "rate_limited": int(row[5]), "average_latency_ms": round(float(row[6]), 2)} for row in rows]
 
 
 def key_stats(session: Session, api_id: UUID, start: datetime, end: datetime):
@@ -100,4 +101,62 @@ def reliability_timeseries(session: Session, api_id: UUID, start: datetime, end:
 
 def version_stats(session: Session, api_id: UUID, start: datetime, end: datetime):
     rows = session.execute(select(APIVersion.version, func.count(TrafficLog.id), func.coalesce(func.sum(case((TrafficLog.status_code >= 400, 1), else_=0)), 0), func.coalesce(func.sum(case((TrafficLog.rate_limit_allowed.is_(False), 1), else_=0)), 0), func.coalesce(func.avg(TrafficLog.duration_ms), 0)).join(TrafficLog, TrafficLog.api_version_id == APIVersion.id).where(*period_filters(api_id, start, end)).group_by(APIVersion.version).order_by(APIVersion.version)).all()
-    return [{"version": row[0], "requests": int(row[1]), "errors": int(row[2]), "rate_limited": int(row[3]), "average_latency_ms": round(float(row[4]), 2)} for row in rows]
+    return [{"version": row[0], "requests": int(row[1]), "errors": int(row[2]), "success_rate": round((int(row[1]) - int(row[2])) / int(row[1]) * 100, 2) if row[1] else 0.0, "rate_limited": int(row[3]), "average_latency_ms": round(float(row[4]), 2)} for row in rows]
+
+
+def _traffic_metrics(session: Session, start: datetime, end: datetime, api_id: UUID | None = None, api_key_id: UUID | None = None):
+    filters = (TrafficLog.created_at >= start, TrafficLog.created_at <= end)
+    if api_id is not None:
+        filters += (TrafficLog.api_id == api_id,)
+    if api_key_id is not None:
+        filters += (TrafficLog.api_key_id == api_key_id,)
+    row = session.execute(select(
+        func.count(TrafficLog.id),
+        func.count(TrafficLog.id).filter(TrafficLog.status_code.between(200, 299)),
+        func.count(TrafficLog.id).filter(TrafficLog.status_code >= 400),
+        func.count(TrafficLog.id).filter(TrafficLog.rate_limit_allowed.is_(False)),
+        func.count(TrafficLog.id).filter(TrafficLog.error_type == "quota"),
+        func.count(TrafficLog.id).filter(TrafficLog.error_type.in_(["upstream_connection", "upstream_error"])),
+        func.count(TrafficLog.id).filter(TrafficLog.error_type == "upstream_timeout"),
+        func.coalesce(func.sum(TrafficLog.retry_count), 0),
+        func.coalesce(func.avg(TrafficLog.duration_ms), 0),
+        func.coalesce(func.min(TrafficLog.duration_ms), 0),
+        func.coalesce(func.max(TrafficLog.duration_ms), 0),
+    ).where(*filters)).one()
+    total = int(row[0])
+    return {"requests": total, "successful_requests": int(row[1]), "failed_requests": int(row[2]), "rate_limited": int(row[3]), "quota_rejected": int(row[4]), "upstream_failures": int(row[5]), "timeouts": int(row[6]), "retries": int(row[7]), "average_latency_ms": round(float(row[8]), 2), "minimum_latency_ms": int(row[9]), "maximum_latency_ms": int(row[10]), "success_rate": round(int(row[1]) / total * 100, 2) if total else 0.0}
+
+
+def get_request_metrics(session: Session, start: datetime, end: datetime, api_id=None, api_key_id=None):
+    return _traffic_metrics(session, start, end, api_id, api_key_id)
+
+
+def get_latency_metrics(session: Session, start: datetime, end: datetime, api_id=None, api_key_id=None):
+    data = _traffic_metrics(session, start, end, api_id, api_key_id)
+    filters = (TrafficLog.created_at >= start, TrafficLog.created_at <= end)
+    if api_id is not None: filters += (TrafficLog.api_id == api_id,)
+    if api_key_id is not None: filters += (TrafficLog.api_key_id == api_key_id,)
+    row = session.execute(select(
+        func.percentile_cont(0.5).within_group(TrafficLog.duration_ms),
+        func.percentile_cont(0.95).within_group(TrafficLog.duration_ms),
+        func.percentile_cont(0.99).within_group(TrafficLog.duration_ms),
+    ).where(*filters)).one()
+    return {"average_ms": data["average_latency_ms"], "p50_ms": round(float(row[0] or 0), 2), "p95_ms": round(float(row[1] or 0), 2), "p99_ms": round(float(row[2] or 0), 2), "minimum_ms": data["minimum_latency_ms"], "maximum_ms": data["maximum_latency_ms"]}
+
+
+def get_error_metrics(session: Session, start: datetime, end: datetime, api_id=None):
+    filters = (TrafficLog.created_at >= start, TrafficLog.created_at <= end, TrafficLog.status_code >= 400)
+    if api_id is not None: filters += (TrafficLog.api_id == api_id,)
+    rows = session.execute(select(TrafficLog.error_type, func.count(TrafficLog.id)).where(*filters).group_by(TrafficLog.error_type).order_by(func.count(TrafficLog.id).desc())).all()
+    return [{"error_type": row[0] or "unknown", "count": int(row[1])} for row in rows]
+
+
+def get_upstream_metrics(session: Session, start: datetime, end: datetime, api_id=None):
+    data = _traffic_metrics(session, start, end, api_id)
+    return {"failures": data["upstream_failures"], "timeouts": data["timeouts"], "retries": data["retries"]}
+
+
+def get_security_metrics(session: Session, start: datetime, end: datetime):
+    rows = session.execute(select(SecurityAuditLog.event_type, func.count(SecurityAuditLog.id)).where(SecurityAuditLog.created_at >= start, SecurityAuditLog.created_at <= end).group_by(SecurityAuditLog.event_type)).all()
+    counts = dict(rows)
+    return {"authentication_failures": counts.get("api_key_authentication_failed", 0), "authorization_failures": counts.get("authorization_failed", 0) + counts.get("api_key_scope_denied", 0), "ip_denials": counts.get("api_key_ip_denied", 0), "origin_denials": counts.get("api_key_origin_denied", 0), "revocations": counts.get("api_key_revoked", 0), "rotations": counts.get("api_key_rotated", 0), "suspensions": counts.get("api_key_suspended", 0)}
