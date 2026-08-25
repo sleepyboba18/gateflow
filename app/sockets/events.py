@@ -28,3 +28,11 @@ def emit_gateway_error(*, request_id, api_id=None, owner_id=None, route_id=None,
     payload = {"request_id": request_id, "api_id": str(api_id) if api_id else None, "route_id": str(route_id) if route_id else None, "error_type": error_type, "status_code": status_code, "created_at": datetime.now(timezone.utc).isoformat()}
     rooms = [room for room in [f"api:{api_id}" if api_id else None, f"user:{owner_id}" if owner_id else None] if room]
     _emit("gateway:error", payload, rooms)
+
+
+def emit_health_event(*, api_id, owner_id, route_id, state, latency_ms):
+    _emit("gateway:health", {"api_id": str(api_id), "route_id": str(route_id) if route_id else None, "state": state, "latency_ms": latency_ms, "created_at": datetime.now(timezone.utc).isoformat()}, [f"api:{api_id}", f"user:{owner_id}"])
+
+
+def emit_circuit_event(*, api_id, owner_id, route_id, previous_state, state):
+    _emit("gateway:circuit", {"api_id": str(api_id), "route_id": str(route_id) if route_id else None, "previous_state": previous_state, "state": state, "created_at": datetime.now(timezone.utc).isoformat()}, [f"api:{api_id}", f"user:{owner_id}"])

@@ -13,6 +13,8 @@ from app.services.analytics_service import (
     latency_stats,
     overview,
     parse_period,
+    reliability,
+    reliability_timeseries,
     route_stats,
     status_stats,
     timeseries,
@@ -115,3 +117,15 @@ def analytics_latency(api_id):
 @require_auth
 def analytics_errors(api_id):
     return _analytics_collection(api_id, error_stats)
+
+
+@analytics_bp.get("/<api_id>/analytics/reliability")
+@require_auth
+def analytics_reliability(api_id):
+    return _analytics_collection(api_id, reliability)
+
+
+@analytics_bp.get("/<api_id>/analytics/reliability/timeseries")
+@require_auth
+def analytics_reliability_timeseries(api_id):
+    return _analytics_collection(api_id, reliability_timeseries, granularity=request.args.get("granularity", "hour"))

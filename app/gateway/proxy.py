@@ -20,7 +20,7 @@ def build_upstream_url(base_url: str, target_path: str) -> str:
     return urljoin(f"{parsed.scheme}://{parsed.netloc}/", target_path.lstrip("/"))
 
 
-def forward_request(resolved: ResolvedGatewayRequest, flask_request: Request, request_id: str, policy=None) -> requests.Response:
+def forward_request(resolved: ResolvedGatewayRequest, flask_request: Request, request_id: str, policy=None, timeout_override=None) -> requests.Response:
     url = build_upstream_url(resolved.api.base_url, resolved.target_path)
     headers = {
         key: value for key, value in flask_request.headers.items() if key.lower() in SAFE_REQUEST_HEADERS and key.lower() != "content-length"
@@ -42,7 +42,7 @@ def forward_request(resolved: ResolvedGatewayRequest, flask_request: Request, re
         params=list(flask_request.args.items(multi=True)),
         data=flask_request.get_data(),
         headers=headers,
-        timeout=resolved.api.timeout_seconds,
+        timeout=timeout_override or resolved.api.timeout_seconds,
         allow_redirects=False,
     )
 

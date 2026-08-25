@@ -226,6 +226,26 @@ GET    /api/v1/apis/<api_id>/headers
 DELETE /api/v1/apis/<api_id>/headers/<header_policy_id>
 ```
 
+## Reliability
+
+Circuit breakers use PostgreSQL-backed `closed`, `open`, and `half_open` states. An open circuit stops upstream calls with `503` after the configured failure threshold; after the recovery timeout, safe probe requests can test recovery. Only `GET`, `HEAD`, and `OPTIONS` are retried by default, with a bounded timeout budget. Health states are `healthy`, `degraded`, `unhealthy`, and `unknown`.
+
+```text
+POST   /api/v1/apis/<api_id>/circuit-breakers
+GET    /api/v1/apis/<api_id>/circuit-breakers
+PUT    /api/v1/apis/<api_id>/circuit-breakers/<breaker_id>
+DELETE /api/v1/apis/<api_id>/circuit-breakers/<breaker_id>
+POST   /api/v1/apis/<api_id>/circuit-breakers/<breaker_id>/reset
+GET    /api/v1/apis/<api_id>/health
+GET    /api/v1/apis/<api_id>/routes/<route_id>/health
+GET    /api/v1/health/upstreams
+POST   /api/v1/apis/<api_id>/health/check
+GET    /api/v1/apis/<api_id>/analytics/reliability
+GET    /api/v1/apis/<api_id>/analytics/reliability/timeseries
+```
+
+Reliability availability excludes `401`, `403`, and `429` policy/client rejections and measures eligible upstream successes against `502`, `503`, and `504` failures. `gateway:health` and `gateway:circuit` provide transient monitoring notifications. PostgreSQL remains authoritative; Redis and background workers are not used.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

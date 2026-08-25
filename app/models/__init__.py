@@ -16,5 +16,7 @@ from app.models.api_scope import APIScope
 from app.models.route_scope import RouteScope
 from app.models.gateway_policy import GatewayPolicy
 from app.models.header_policy import HeaderPolicy
+from app.models.circuit_breaker import CircuitBreaker
+from app.models.upstream_health import UpstreamHealth
 
-__all__ = ["API", "APIKey", "APIKeyPlan", "APIKeyScope", "APIRoute", "APIScope", "GatewayPolicy", "HeaderPolicy", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "RouteScope", "Scope", "TrafficLog", "User"]
+__all__ = ["API", "APIKey", "APIKeyPlan", "APIKeyScope", "APIRoute", "APIScope", "CircuitBreaker", "GatewayPolicy", "HeaderPolicy", "Plan", "PlanQuota", "PlanRateLimit", "QuotaCounter", "RateLimit", "RateLimitCounter", "RouteScope", "Scope", "TrafficLog", "UpstreamHealth", "User"]

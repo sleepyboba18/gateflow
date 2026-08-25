@@ -32,6 +32,7 @@ def create_app() -> Flask:
     from app.routes.rate_limits import rate_limits_bp
     from app.routes.plans import plans_bp
     from app.routes.policies import policies_bp
+    from app.routes.reliability import reliability_bp
     from app.routes.analytics import analytics_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -41,6 +42,7 @@ def create_app() -> Flask:
     app.register_blueprint(rate_limits_bp, url_prefix="/api/v1/apis")
     app.register_blueprint(plans_bp, url_prefix="/api/v1/plans")
     app.register_blueprint(policies_bp, url_prefix="/api/v1")
+    app.register_blueprint(reliability_bp, url_prefix="/api/v1")
     app.register_blueprint(analytics_bp, url_prefix="/api/v1/apis")
 
     from app.sockets import auth as socket_auth

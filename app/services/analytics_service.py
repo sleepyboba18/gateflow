@@ -71,3 +71,27 @@ def snapshot(session: Session, api_id: UUID) -> dict:
     end = datetime.now(timezone.utc)
     data = overview(session, api_id, end - timedelta(hours=1), end)
     return {"api_id": str(api_id), "requests_last_hour": data["total_requests"], "errors_last_hour": data["client_errors"] + data["server_errors"], "rate_limited_last_hour": data["rate_limited"], "average_latency_ms": data["average_latency_ms"]}
+
+
+def reliability(session: Session, api_id: UUID, start: datetime, end: datetime) -> dict:
+    eligible = TrafficLog.status_code.not_in([401, 403, 429])
+    row = session.execute(select(
+        func.count(TrafficLog.id).filter(eligible),
+        func.count(TrafficLog.id).filter(TrafficLog.status_code.between(200, 299)),
+        func.count(TrafficLog.id).filter(TrafficLog.status_code.in_([502, 503, 504])),
+        func.count(TrafficLog.id).filter(TrafficLog.error_type == "upstream_timeout"),
+        func.count(TrafficLog.id).filter(TrafficLog.error_type == "upstream_connection"),
+        func.coalesce(func.sum(TrafficLog.retry_count), 0),
+        func.coalesce(func.sum(TrafficLog.upstream_attempts), 0),
+        func.coalesce(func.avg(TrafficLog.duration_ms), 0),
+    ).where(*period_filters(api_id, start, end))).one()
+    eligible_count, successful, failures, timeouts, connections, retries, attempts, average = map(int, row)
+    return {"availability_percent": round((successful / eligible_count * 100) if eligible_count else 100, 2), "success_rate": round((successful / eligible_count * 100) if eligible_count else 0, 2), "failure_rate": round((failures / eligible_count * 100) if eligible_count else 0, 2), "average_latency_ms": round(float(row[7]), 2), "timeouts": timeouts, "connection_failures": connections, "retries": retries, "upstream_attempts": attempts}
+
+
+def reliability_timeseries(session: Session, api_id: UUID, start: datetime, end: datetime, granularity: str):
+    if granularity not in {"minute", "hour", "day"}:
+        raise ValueError("Invalid granularity")
+    bucket = func.date_trunc(granularity, TrafficLog.created_at).label("timestamp")
+    rows = session.execute(select(bucket, func.count(TrafficLog.id), func.coalesce(func.sum(case((TrafficLog.status_code.in_([502, 503, 504]), 1), else_=0)), 0), func.coalesce(func.sum(case((TrafficLog.error_type == "upstream_timeout", 1), else_=0)), 0), func.coalesce(func.avg(TrafficLog.duration_ms), 0)).where(*period_filters(api_id, start, end)).group_by(bucket).order_by(bucket)).all()
+    return [{"timestamp": row[0].astimezone(timezone.utc).isoformat(), "requests": int(row[1]), "failures": int(row[2]), "timeouts": int(row[3]), "average_latency_ms": round(float(row[4]), 2)} for row in rows]

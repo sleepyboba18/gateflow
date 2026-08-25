@@ -1,7 +1,6 @@
 import logging
 import time
 import uuid
-from contextlib import contextmanager
 
 import requests
 from flask import Request
@@ -21,6 +20,10 @@ from app.services.gateway_policy_service import resolve_gateway_policy
 from app.services.scope_service import check_scope_access
 from app.gateway.request_policy import apply_request_policy
 from app.gateway.response_policy import apply_response_policy
+from app.gateway.reliability import request_with_retries
+from app.services.circuit_breaker_service import can_request, get_effective_breaker, record_failure, record_success
+from app.services.upstream_health_service import record_result
+from app.sockets.events import emit_circuit_event, emit_health_event
 
 logger = logging.getLogger("gateforge.gateway")
 
@@ -102,10 +105,31 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             )
             message = "Daily quota exceeded" if decision.quota and decision.policy_type == "daily" else "Monthly quota exceeded" if decision.quota else "Rate limit exceeded"
             return {"error": message, "status": 429, "request_id": request_id, "limit_type": decision.policy_type, "retry_after": decision.retry_after}, 429, _rate_headers(decision)
-        response = forward_request(resolved, flask_request, request_id)
+        breaker = get_effective_breaker(session, resolved.api.id, resolved.route.id)
+        circuit = can_request(session, resolved.api.id, resolved.route.id)
+        if circuit.changed:
+            session.commit()
+            emit_circuit_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, previous_state=circuit.previous_state, state=circuit.state)
+        if not circuit.allowed:
+            status = 503
+            retry_after = str(circuit.retry_after or 1)
+            _record(session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id, api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method, path=flask_request.path, upstream_url=None, status_code=status, duration_ms=int((time.perf_counter() - started) * 1000), request_size=flask_request.content_length or 0, response_size=0, rate_limit_allowed=True, rate_limit_remaining=decision.remaining, circuit_state=circuit.state, retry_count=0, upstream_attempts=0, error_type="circuit_open")
+            return {"error": "Upstream service temporarily unavailable", "status": status, "request_id": request_id}, status, [("Retry-After", retry_after)]
+        deadline = time.monotonic() + resolved.api.timeout_seconds
+        response, upstream_attempts, retry_count = request_with_retries(
+            lambda timeout: forward_request(resolved, flask_request, request_id, gateway_policy, timeout),
+            flask_request.method, resolved.api.max_retries if resolved.api.retry_enabled else 0,
+            resolved.api.retry_backoff_ms, deadline,
+        )
         body, status, headers = response_parts(response)
         headers = apply_response_policy(headers, gateway_policy)
         headers.extend(_rate_headers(decision))
+        logical_success = status not in {502, 503, 504} and status < 500
+        breaker_result = record_success(session, breaker) if logical_success else record_failure(session, breaker)
+        if breaker_result.changed:
+            emit_circuit_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, previous_state=breaker_result.previous_state, state=breaker_result.state)
+        health = record_result(session, resolved.api.id, resolved.route.id, logical_success, (time.perf_counter() - started) * 1000, status)
+        emit_health_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, state=health.state, latency_ms=health.average_latency_ms)
         _record(
             session, request_id=request_id, api_id=resolved.api.id, route_id=resolved.route.id,
             api_key_id=api_key.id, user_id=api_key.user_id, method=flask_request.method,
@@ -117,6 +141,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             rate_limit_limit=decision.limit if not decision.quota else None,
             quota_limit=decision.limit if decision.quota else None,
             quota_remaining=decision.remaining if decision.quota else None, scope_authorized=True, policy_allowed=True, error_type=None,
+            retry_count=retry_count, upstream_attempts=upstream_attempts, circuit_state=breaker_result.state if breaker_result.state else circuit.state,
         )
         emit_traffic_event(
             request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id,
@@ -143,12 +168,18 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
         status = 504
         if api_key is not None and resolved is not None:
             _record_failure(session, resolved, api_key, flask_request, request_id, 504, "upstream_timeout", started)
+            breaker_result = record_failure(session, breaker)
+            health = record_result(session, resolved.api.id, resolved.route.id, False, (time.perf_counter() - started) * 1000, 504)
+            emit_health_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, state=health.state, latency_ms=health.average_latency_ms)
             emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="upstream_timeout", status_code=504)
         return error_response("Upstream service timed out", 504, request_id)
     except (requests.RequestException, ValueError):
         status = 502
         if api_key is not None and resolved is not None:
             _record_failure(session, resolved, api_key, flask_request, request_id, 502, "upstream_connection", started)
+            breaker_result = record_failure(session, breaker)
+            health = record_result(session, resolved.api.id, resolved.route.id, False, (time.perf_counter() - started) * 1000, 502)
+            emit_health_event(api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, state=health.state, latency_ms=health.average_latency_ms)
             emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="upstream_connection", status_code=502)
         return error_response("Unable to reach upstream service", 502, request_id)
     except SQLAlchemyError:

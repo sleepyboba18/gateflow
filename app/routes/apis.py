@@ -49,6 +49,7 @@ def _api_response(api: API, include_routes: bool = False) -> dict:
         "timeout_seconds": api.timeout_seconds, "created_at": _timestamp(api.created_at),
         "updated_at": _timestamp(api.updated_at),
         "upstream_auth": {"type": api.upstream_auth_type, "configured": bool(api.upstream_auth_value)},
+        "retry_enabled": api.retry_enabled, "max_retries": api.max_retries, "retry_backoff_ms": api.retry_backoff_ms,
     }
     if include_routes:
         result["routes"] = [_route_response(route) for route in api.routes]
@@ -90,7 +91,10 @@ def create_api_route():
         auth_type = data.get("upstream_auth_type", "none")
         if auth_type not in {"none", "bearer", "api_key", "basic"} or (auth_type == "api_key" and data.get("upstream_auth_header") and not isinstance(data["upstream_auth_header"], str)):
             return _error("Invalid request", 400)
-        api = create_api(session, owner_id=g.current_user.id, name=name.strip(), slug=slug, base_url=base_url.strip(), description=data.get("description"), timeout_seconds=timeout, upstream_auth_type=auth_type, upstream_auth_value=data.get("upstream_auth_value"), upstream_auth_header=data.get("upstream_auth_header"))
+        retries = data.get("max_retries", 2); backoff = data.get("retry_backoff_ms", 100)
+        if not isinstance(retries, int) or not 0 <= retries <= 3 or not isinstance(backoff, int) or not 0 <= backoff <= 2000 or not isinstance(data.get("retry_enabled", True), bool):
+            return _error("Invalid request", 400)
+        api = create_api(session, owner_id=g.current_user.id, name=name.strip(), slug=slug, base_url=base_url.strip(), description=data.get("description"), timeout_seconds=timeout, upstream_auth_type=auth_type, upstream_auth_value=data.get("upstream_auth_value"), upstream_auth_header=data.get("upstream_auth_header"), retry_enabled=data.get("retry_enabled", True), max_retries=retries, retry_backoff_ms=backoff)
         commit_or_raise_conflict(session)
         session.refresh(api)
         return jsonify({"api": _api_response(api)}), 201
@@ -175,6 +179,15 @@ def update_api(api_id: str):
             if not isinstance(data["upstream_auth_header"], str) or "\r" in data["upstream_auth_header"] or "\n" in data["upstream_auth_header"]:
                 return _error("Invalid request", 400)
             api.upstream_auth_header = data["upstream_auth_header"]
+        for field, maximum in (("max_retries", 3), ("retry_backoff_ms", 2000)):
+            if field in data and (not isinstance(data[field], int) or not 0 <= data[field] <= maximum):
+                return _error("Invalid request", 400)
+            if field in data:
+                setattr(api, field, data[field])
+        if "retry_enabled" in data:
+            if not isinstance(data["retry_enabled"], bool):
+                return _error("Invalid request", 400)
+            api.retry_enabled = data["retry_enabled"]
         commit_or_raise_conflict(session)
         session.refresh(api)
         return jsonify({"api": _api_response(api)}), 200
