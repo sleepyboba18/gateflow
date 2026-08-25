@@ -21,3 +21,6 @@ class User(Base):
     api_keys: Mapped[list["APIKey"]] = relationship(
         "APIKey", back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
+    apis: Mapped[list["API"]] = relationship(
+        "API", back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
+    )

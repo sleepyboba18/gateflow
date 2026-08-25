@@ -92,6 +92,35 @@ API keys are generated securely, hashed before storage in Supabase PostgreSQL, a
 
 Tests require `TEST_DATABASE_URL`, which must point to an isolated PostgreSQL database. No SQLite database is used.
 
+## API Management
+
+All API and route management endpoints require a JWT for an authenticated user:
+
+```text
+POST   /api/v1/apis
+GET    /api/v1/apis
+GET    /api/v1/apis/<api_id>
+PUT    /api/v1/apis/<api_id>
+DELETE /api/v1/apis/<api_id>
+
+POST   /api/v1/apis/<api_id>/routes
+GET    /api/v1/apis/<api_id>/routes
+PUT    /api/v1/apis/<api_id>/routes/<route_id>
+DELETE /api/v1/apis/<api_id>/routes/<route_id>
+```
+
+An API registration contains a public slug, an HTTP(S) upstream base URL, and a timeout. Routes match an uppercase HTTP method and public path to an optional upstream target path. Upstream URLs are checked against common private and loopback address ranges to reduce SSRF risk.
+
+## Gateway
+
+Gateway traffic uses:
+
+```text
+/gateway/<api_slug>/<path>
+```
+
+Every gateway request requires an `X-API-Key` belonging to the owner of the registered API. GateForge resolves the configured route, forwards safe headers, query parameters, and the raw request body, then returns the upstream status and safe response headers. Requests receive a generated or preserved `X-Request-ID`, which is returned to the client and included in gateway logs. Upstream timeouts return `504`; connection failures return `502`.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
