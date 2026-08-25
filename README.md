@@ -171,6 +171,28 @@ New API keys use the active assigned plan, or the active default Free plan when 
 
 Plan and quota counters are maintained synchronously with PostgreSQL atomic upserts. PostgreSQL/Supabase is the authoritative state store; Redis is not required or used.
 
+## Analytics
+
+Analytics queries aggregate the persistent `TrafficLog` table in PostgreSQL and default to the previous 24 hours. All endpoints require JWT authentication and API ownership or admin access:
+
+```text
+GET /api/v1/apis/<api_id>/analytics
+GET /api/v1/apis/<api_id>/analytics/timeseries?granularity=hour
+GET /api/v1/apis/<api_id>/analytics/routes
+GET /api/v1/apis/<api_id>/analytics/api-keys
+GET /api/v1/apis/<api_id>/analytics/status-codes
+GET /api/v1/apis/<api_id>/analytics/latency
+GET /api/v1/apis/<api_id>/analytics/errors
+```
+
+Use `from` and `to` ISO 8601 UTC query parameters for a custom time range. Results include request volume, status/error groups, latency, rate-limited traffic, and time-series data without loading the full traffic table into Python.
+
+## Socket.IO Monitoring
+
+Monitoring connections provide a JWT in the connection payload as `{ "token": "<JWT>" }`. Active users automatically join `user:<user_id>`. Authorized clients may join `api:<api_id>` and `api_key:<api_key_id>` rooms; owners and admins are checked against PostgreSQL.
+
+Supported events are `connect`, `disconnect`, `join_api`, `leave_api`, `join_api_key`, `leave_api`, `join_user`, and `leave_user`. Gateway notifications use `gateway:traffic`, `gateway:rate_limit`, and `gateway:error`; API-room joins receive `monitoring:snapshot`. Socket.IO is transient notification transport only, while PostgreSQL remains the persistent source of truth. Event delivery failures do not fail HTTP gateway responses, and no Redis message queue is used.
+
 ## License
 
 GateForge is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

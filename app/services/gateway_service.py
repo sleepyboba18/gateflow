@@ -16,6 +16,7 @@ from app.services.api_key_service import validate_api_key
 from app.services.rate_limit_service import RateLimitConfigurationError
 from app.services.policy_service import PolicyConfigurationError, evaluate_policy, resolve_effective_policy
 from app.services.traffic_service import record_traffic
+from app.sockets.events import emit_gateway_error, emit_rate_limit_event, emit_traffic_event
 
 logger = logging.getLogger("gateforge.gateway")
 
@@ -78,6 +79,11 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
                 quota_limit=decision.limit if decision.quota else None,
                 quota_remaining=decision.remaining if decision.quota else None, error_type="rate_limit",
             )
+            emit_rate_limit_event(
+                request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id,
+                route_id=resolved.route.id, api_key_id=api_key.id, limit_type=decision.policy_type,
+                limit=decision.limit, remaining=decision.remaining, retry_after=decision.retry_after,
+            )
             message = "Daily quota exceeded" if decision.quota and decision.policy_type == "daily" else "Monthly quota exceeded" if decision.quota else "Rate limit exceeded"
             return {"error": message, "status": 429, "request_id": request_id, "limit_type": decision.policy_type, "retry_after": decision.retry_after}, 429, _rate_headers(decision)
         response = forward_request(resolved, flask_request, request_id)
@@ -95,6 +101,11 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
             quota_limit=decision.limit if decision.quota else None,
             quota_remaining=decision.remaining if decision.quota else None, error_type=None,
         )
+        emit_traffic_event(
+            request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id,
+            route_id=resolved.route.id, api_key_id=api_key.id, method=flask_request.method,
+            path=flask_request.path, status_code=status, duration_ms=int((time.perf_counter() - started) * 1000),
+        )
         return body, status, headers
     except GatewayResolutionError as error:
         status = error.status
@@ -106,6 +117,7 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
                 request_size=flask_request.content_length or 0, response_size=0,
                 rate_limit_allowed=None, rate_limit_remaining=None, error_type="gateway_error",
             )
+            emit_gateway_error(request_id=request_id, api_id=None, owner_id=api_key.user_id, error_type="gateway_error", status_code=status)
         return error_response(error.message, error.status, request_id)
     except (RateLimitConfigurationError, PolicyConfigurationError):
         status = 500
@@ -114,11 +126,13 @@ def handle_gateway_request(api_slug: str, request_path: str, flask_request: Requ
         status = 504
         if api_key is not None and resolved is not None:
             _record_failure(session, resolved, api_key, flask_request, request_id, 504, "upstream_timeout", started)
+            emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="upstream_timeout", status_code=504)
         return error_response("Upstream service timed out", 504, request_id)
     except (requests.RequestException, ValueError):
         status = 502
         if api_key is not None and resolved is not None:
             _record_failure(session, resolved, api_key, flask_request, request_id, 502, "upstream_connection", started)
+            emit_gateway_error(request_id=request_id, api_id=resolved.api.id, owner_id=api_key.user_id, route_id=resolved.route.id, error_type="upstream_connection", status_code=502)
         return error_response("Unable to reach upstream service", 502, request_id)
     except SQLAlchemyError:
         status = 503
