@@ -68,6 +68,10 @@ def create_app() -> Flask:
     from app.sockets import events as socket_events
     from app.sockets import rooms as socket_rooms
 
+    @app.get("/")
+    def index() -> tuple[Any, int]:
+        return jsonify({"service": Config.APP_NAME, "status": "ok", "version": "1.0.0", "health": "/health"}), 200
+
     @app.get("/health")
     def health() -> tuple[Any, int]:
         from app.database.connection import check_database_connection
