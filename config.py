@@ -1,5 +1,6 @@
 import os
 
+from sqlalchemy import URL
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +27,23 @@ class Config:
     PORT = _as_int(os.getenv("APP_PORT"), 5000)
     DEBUG = _as_bool(os.getenv("APP_DEBUG"), APP_ENV == "development")
 
-    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    POSTGRES_USERNAME = os.getenv("POSTGRES_BOT_USERNAME", "")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_BOT_PASSWORD", "")
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "")
+    POSTGRES_PORT = _as_int(os.getenv("POSTGRES_PORT"), 5432)
+    POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "postgres")
+    DATABASE_URL = (
+        URL.create(
+            "postgresql+psycopg2",
+            username=POSTGRES_USERNAME,
+            password=POSTGRES_PASSWORD,
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT,
+            database=POSTGRES_DATABASE,
+        ).render_as_string(hide_password=False)
+        if POSTGRES_USERNAME and POSTGRES_PASSWORD and POSTGRES_HOST
+        else ""
+    )
 
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change_this_secret")
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

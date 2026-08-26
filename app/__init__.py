@@ -10,7 +10,7 @@ from app.observability.logger import configure_logging, log_event
 from app.observability.request_logging import init_request_logging
 
 logger = configure_logging(Config.LOG_LEVEL, Config.LOG_JSON)
-socketio = SocketIO()
+socketio = SocketIO(async_mode="threading")
 
 
 def create_app() -> Flask:

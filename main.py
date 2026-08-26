@@ -23,4 +23,4 @@ if __name__ == "__main__":
         with SessionLocal() as session:
             ensure_default_plan(session)
     logger.info("%s started", Config.APP_NAME)
-    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
+    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=Config.DEBUG, use_reloader=False)
